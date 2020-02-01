@@ -4,22 +4,23 @@ package bch
 import (
 	"fmt"
 	"math"
-	"math/rand"
 )
 
-var m, n, length, k, t, d int
-var p [21]uint8
-var alphaTo [1048576]int
-var indexOf [1048576]int
-var g [548576]int
-var recd [1048576]int
-var data [1048576]int
-var bb [548576]int
-var seed, numerr int
-var errpos [1024]int
-var decerror = 0
+// EncodingConfig stores all the computed values from encoding that are necessary for decoding later.
+type EncodingConfig struct {
+	MaxCorrectableErrors int
+	N                    int
+	Field                GField
+}
 
-func ReadP() {
+// GField stores a Galois field for passing between the Encode() and Decode() operations.
+type GField struct {
+	AlphaTo [1048576]int
+	IndexOf [1048576]int
+}
+
+
+func readP(m int) (n int, p [21]uint8, err error) {
 	/*fmt.Println("First, enter a value of m such that the code length is")
 	fmt.Println("2**(m-1) - 1 < length <= 2**m - 1")
 	for do := false; !do || m <= 1 || m >= 21; do = true {
@@ -73,9 +74,11 @@ func ReadP() {
 		fmt.Printf("Enter the code length (%d < length <= %d): ", ninf, n)
 		fmt.Scanf("%d", &length)
 	}*/
+
+	return
 }
 
-func GenerateGF() {
+func generateGF(m, n int, p [21]uint8) (alphaTo, indexOf [1048576]int, err error) {
 	mask := 1
 	alphaTo[m] = 0
 	for i := 0; i < m; i++ {
@@ -97,9 +100,11 @@ func GenerateGF() {
 		indexOf[alphaTo[i]] = i
 	}
 	indexOf[0] = -1
+
+	return
 }
 
-func GenPoly() {
+func genPoly(t, n, length int, alphaTo, indexOf [1048576]int) (g [548576]int, k, d int, err error) {
 	var ii, jj, ll, kaux int
 	var aux, nocycles, root, noterms, rdncy int
 	var test bool
@@ -113,9 +118,9 @@ func GenPoly() {
 	cycle[1][0] = 1
 	size[1] = 1
 	jj = 1
-	if m > 9 {
+	/*if m > 9 {
 		fmt.Printf("Computing cycle sets modulo %d\n", n)
-	}
+	}*/
 	for do := false; !do || ll < n - 1; do = true {
 		// Generate the jj-th cycle set
 		ii = 0
@@ -182,9 +187,9 @@ func GenPoly() {
 
 	k = length - rdncy
 
-	if k < 0 {
+	/*if k < 0 {
 		fmt.Println("The parameters are invalid!")
-	}
+	}*/
 
 	fmt.Printf("This is a (%d, %d, %d) binary BCH code.\n", length, k, d)
 
@@ -210,12 +215,14 @@ func GenPoly() {
 		}
 	}
 	fmt.Printf("\n")
+
+	return
 }
 
 // Compute redundancy bb[], the coefficients of b(x). The redundancy
 // polynomial b(x) is the remainder after dividing x^(length-k)*data(x)
 // by the generator polynomial g(x).
-func EncodeBCH() {
+func encodeBCH(length, k int, g [548576]int, data []int) (bb [548576]int, err error) {
 	var i, j, feedback int
 
 	for i = 0; i < length - k; i++ {
@@ -239,9 +246,11 @@ func EncodeBCH() {
 			bb[0] = 0
 		}
 	}
+
+	return
 }
 
-func DecodeBCH() {
+func decodeBCH(length, t, n int, alphaTo, indexOf [1048576]int, recd []int) ([]int, error) {
 	var i, j, u, q, t2 int
 	var count, synError = 0, 0
 	elp, d, l, uLu, s := make([][]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1025)
@@ -253,7 +262,7 @@ func DecodeBCH() {
 	t2 = 2 * t
 
 	// First, form the syndromes
-	fmt.Printf("S(x) = ")
+	//fmt.Printf("S(x) = ")
 	for i = 1; i <= t2; i++ {
 		s[i] = 0
 		for j = 0; j < length; j++ {
@@ -268,9 +277,9 @@ func DecodeBCH() {
 
 		// Convert the syndrome from polynomial to index form
 		s[i] = indexOf[s[i]]
-		fmt.Printf("%3d ", s[i])
+		//fmt.Printf("%3d ", s[i])
 	}
-	fmt.Printf("\n")
+	//fmt.Printf("\n")
 
 	// If there are errors, try to correct them
 	if synError != 0 {
@@ -371,12 +380,12 @@ func DecodeBCH() {
 				elp[u][i] = indexOf[elp[u][i]]
 			}
 
-			fmt.Printf("sigma(x) = ")
+			/*(fmt.Printf("sigma(x) = ")
 			for i = 0; i <= l[u]; i++ {
 				fmt.Printf("%3d ", elp[u][i])
 			}
 			fmt.Printf("\n")
-			fmt.Printf("Roots: ")
+			fmt.Printf("Roots: ")*/
 
 			// Chien search: find the roots of the error location polynomial
 			for i = 1; i <= l[u]; i++ {
@@ -396,10 +405,10 @@ func DecodeBCH() {
 					root[count] = i
 					loc[count] = n - i
 					count++
-					fmt.Printf("%3d ", n - i)
+					//fmt.Printf("%3d ", n - i)
 				}
 			}
-			fmt.Printf("\n")
+			//fmt.Printf("\n")
 			if count == l[u] {
 				// Number of roots = degree of elp, hence <= t errors
 				for i = 0; i < l[u]; i++ {
@@ -410,32 +419,34 @@ func DecodeBCH() {
 			}
 		}
 	}
+
+	return recd[:], nil
 }
 
-func Encode(codeLength, correctableErrors int, buf *[]int) []int {
-	m = int(math.Log2(float64(codeLength))) + 1
-	length = codeLength
-	t = correctableErrors
+func Encode(codeLength, correctableErrors int, buf *[]int) ([]int, EncodingConfig) {
+	m := int(math.Log2(float64(codeLength))) + 1
 
-	ReadP()
-	GenerateGF()
-	GenPoly()
+	n, p, _ := readP(m)
+	alphaTo, indexOf, _ := generateGF(m, n, p)
+	g, k, _, _ := genPoly(correctableErrors, n, codeLength, alphaTo, indexOf)
 
+	data := make([]int, k)
 	for i := 0; i < k; i++ {
 		data[i] = (*buf)[i]
 	}
 
-	EncodeBCH()
+	bb, _ := encodeBCH(codeLength, k, g, data)
 
 	// Load the data into the code value (ecc bits followed by original data)
-	for i := 0; i < length - k; i++ {
+	recd := make([]int, codeLength)
+	for i := 0; i < codeLength - k; i++ {
 		recd[i] = bb[i]
 	}
 	for i := 0; i < k; i++ {
-		recd[i + length - k] = data[i]
+		recd[i + codeLength - k] = data[i]
 	}
 
-	for i := 0; i < length; i++ {
+	for i := 0; i < codeLength; i++ {
 		fmt.Printf("%1d", recd[i])
 		if i != 0 && i % 50 == 0 {
 			fmt.Printf("\n")
@@ -443,99 +454,11 @@ func Encode(codeLength, correctableErrors int, buf *[]int) []int {
 	}
 	fmt.Printf("\n")
 
-	return recd[:length]
+	return recd, EncodingConfig{correctableErrors, n, GField{alphaTo, indexOf}}
 }
 
-func Decode(buf *[]int) []int {
-	DecodeBCH()
+func Decode(buf *[]int, config EncodingConfig) []int {
+	recd, _ := decodeBCH(len(*buf), config.MaxCorrectableErrors, config.N, config.Field.AlphaTo, config.Field.IndexOf, *buf)
 
-	return recd[:length]
-}
-
-func Man() {
-	ReadP()
-	GenerateGF()
-	GenPoly()
-
-	// Randomly generate data
-	seed = 131073
-	rand.Seed(int64(seed))
-	for i := 0; i < k; i++ {
-		data[i] = (rand.Int() & 65536) >> 16
-	}
-
-	fmt.Println(data[:k])
-
-	EncodeBCH()
-
-	// recd[] is the coefficients of c(x) = x**(length - k) * data(x) + b(x)
-	for i := 0; i < length - k; i++ {
-		recd[i] = bb[i]
-	}
-	for i := 0; i < k; i++ {
-		recd[i + length - k] = data[i]
-	}
-	fmt.Printf("Code polynomial:\nc(x) = ")
-	for i := 0; i < length; i++ {
-		fmt.Printf("%1d", recd[i])
-		if i != 0 && i % 50 == 0 {
-			fmt.Printf("\n")
-		}
-	}
-	fmt.Printf("\n")
-
-	// Induce errors in the data
-	fmt.Println("Enter the number of errors:")
-	fmt.Scanf("%d", &numerr)
-	fmt.Printf("Enter error locations (integers between 0 and %d): ", length - 1)
-
-	// recd[] is the coefficients of r(x) = c(x) + e(x)
-	for i := 0; i < numerr; i++ {
-		fmt.Scanf("%d", &errpos[i])
-	}
-	if numerr != 0 {
-		for i := 0; i < numerr; i++ {
-			recd[errpos[i]] ^= 1
-		}
-	}
-	fmt.Printf("r(x) = ")
-	for i := 0; i < length; i++ {
-		fmt.Printf("%1d", recd[i])
-		if i != 0 && i % 50 == 0 {
-			fmt.Printf("\n")
-		}
-	}
-	fmt.Printf("\n")
-
-	DecodeBCH() // Decode the received codeword recv[]
-
-	// Print out the original and decoded data
-	fmt.Println("Results:")
-	fmt.Println("Original data = ")
-	for i := 0; i < k; i++ {
-		fmt.Printf("%1d", data[i])
-		if i != 0 && i % 50 == 0 {
-			fmt.Printf("\n")
-		}
-	}
-	fmt.Printf("\nRecovered data = \n")
-	for i := length - k; i < length; i++ {
-		fmt.Printf("%1d", recd[i])
-		if i - length + k != 0 && (i - length + k) % 50 == 0 {
-			fmt.Printf("\n")
-		}
-	}
-	fmt.Printf("\n")
-
-	// Decoding errors? We only compare the data portion
-	for i := length - k; i < length; i++ {
-		if data[i - length + k] != recd[i] {
-			decerror++
-		}
-	}
-	if decerror != 0 {
-		fmt.Printf("There were %d decoding errors in message positions.\n", decerror)
-	} else {
-		fmt.Println("Successful decoding.")
-	}
+	return recd
 }

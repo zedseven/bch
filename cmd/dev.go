@@ -47,14 +47,14 @@ func main() {
 	length := 0
 	fmt.Scanf("%d", &length)
 	m := uint8(math.Log2(float64(length))) + 1
-	bch.ReadP(m)*/
+	bch.readP(m)*/
 
 	lol := []int{1, 1, 1, 0, 0, 1, 0, 0}
 	fmt.Printf("Original data: %v\n", lol)
-	data := bch.Encode(32, 4, &lol)
+	data, config := bch.Encode(32, 4, &lol)
 	fmt.Printf("Encoded data:   %v\n", data)
 	corruptData(&data, 4)
 	fmt.Printf("Corrupted data: %v\n", data)
-	recv := bch.Decode(&data)
+	recv := bch.Decode(&data, config)
 	fmt.Printf("Decoded data:   %v\n", recv)
 }
