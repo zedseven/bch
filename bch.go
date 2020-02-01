@@ -11,12 +11,172 @@ type EncodingConfig struct {
 	MaxCorrectableErrors int
 	N                    int
 	Field                GField
+	CodeLength           int
+	StorageBits          int // k
+	D                    int
+}
+
+// BCHNotation returns the standard notation for a BCH configuration of the EncodingConfig.
+func (c EncodingConfig) BCHNotation() string {
+	return fmt.Sprintf("(%d, %d, %d)", c.CodeLength, c.StorageBits, c.D)
 }
 
 // GField stores a Galois field for passing between the Encode() and Decode() operations.
 type GField struct {
 	AlphaTo [1048576]int
 	IndexOf [1048576]int
+}
+
+// InvalidInputError is thrown when Encode() is asked to encode with settings that are invalid.
+type InvalidInputError struct {
+	// Additional information about the problem.
+	AdditionalInfo string
+}
+
+// Error returns a string that explains the InvalidInputError.
+func (e InvalidInputError) Error() string {
+	ret := "The argument provided is invalid."
+	if len(e.AdditionalInfo) > 0 {
+		return fmt.Sprintf("%v Additional info: %v", ret, e.AdditionalInfo)
+	}
+	return ret
+}
+
+// UnachievableConfigError is thrown when Encode() is asked to encode with settings that are either
+// useless or unachievable.
+type UnachievableConfigError struct {
+	// Additional information about the problem.
+	AdditionalInfo string
+}
+
+// Error returns a string that explains the UnachievableConfigError.
+func (e UnachievableConfigError) Error() string {
+	ret := "The config asked for is either useless or unachievable."
+	if len(e.AdditionalInfo) > 0 {
+		return fmt.Sprintf("%v Additional info: %v", ret, e.AdditionalInfo)
+	}
+	return ret
+}
+
+// DataTooCorruptError is thrown when the data provided to Decode() has been corrupted too much to be able
+// to recover.
+type DataTooCorruptError struct {}
+
+// Error returns a string that explains the DataTooCorruptError.
+func (e DataTooCorruptError) Error() string {
+	return "The data provided has been corrupted too badly to be able to recover."
+}
+
+// Encode encodes the first k bits of the data in buf based on how many parity bits are required to satisfy
+// the maximum correctable number of errors specified by correctableErrors. Note that the maximum correctable
+// errors does not scale linearly with the number of parity bits required for the task.
+func Encode(codeLength, correctableErrors int, buf *[]int) (recd []int, config EncodingConfig, err error) {
+	m := int(math.Log2(float64(codeLength))) + 1
+
+	n, p, err := readP(m)
+	if err != nil {
+		return
+	}
+	field, err := generateGF(m, n, p)
+	if err != nil {
+		return
+	}
+	g, k, d, err := genPoly(correctableErrors, n, codeLength, field)
+	if err != nil {
+		return
+	}
+
+	data := make([]int, k)
+	for i := 0; i < k; i++ {
+		data[i] = (*buf)[i]
+	}
+
+	bb, err := encodeBCH(codeLength, k, g, data)
+	if err != nil {
+		return
+	}
+
+	// Load the data into the code value (ecc bits followed by original data)
+	recd = make([]int, codeLength)
+	for i := 0; i < codeLength - k; i++ {
+		recd[i] = bb[i]
+	}
+	for i := 0; i < k; i++ {
+		recd[i + codeLength - k] = data[i]
+	}
+
+	/*for i := 0; i < codeLength; i++ {
+		fmt.Printf("%1d", recd[i])
+		if i != 0 && i % 50 == 0 {
+			fmt.Printf("\n")
+		}
+	}
+	fmt.Printf("\n")*/
+
+	config = EncodingConfig{
+		MaxCorrectableErrors: correctableErrors,
+		N:                    n,
+		Field:                field,
+		CodeLength:           codeLength,
+		StorageBits:          k,
+		D:                    d,
+	}
+
+	return
+}
+
+// Decode decodes a buffer of bits according to an EncodingConfig.
+func Decode(buf *[]int, config EncodingConfig) (recd []int, err error) {
+	recd, err = decodeBCH(config.CodeLength, config.MaxCorrectableErrors, config.N, config.Field, *buf)
+
+	return
+}
+
+// StorageBitsForConfig determines the number of bits able to be used for storage with a given configuration.
+func StorageBitsForConfig(codeLength, correctableErrors int) (int, error) {
+	m := int(math.Log2(float64(codeLength))) + 1
+
+	n, p, err := readP(m)
+	if err != nil {
+		return -1, err
+	}
+	field, err := generateGF(m, n, p)
+	if err != nil {
+		return -1, err
+	}
+	_, k, _, err := genPoly(correctableErrors, n, codeLength, field)
+	if err != nil {
+		switch err.(type) {
+		case *UnachievableConfigError:
+			return 0, nil
+		default:
+			return k, err
+		}
+	}
+
+	return k, nil
+}
+
+// IsDataCorrupted determines whether or not provided data is corrupted.
+func IsDataCorrupted(config EncodingConfig, data []int) bool {
+	var i, j, t2 int
+	s := make([]int, 1025)
+
+	t2 = 2 * config.MaxCorrectableErrors
+
+	for i = 1; i <= t2; i++ {
+		s[i] = 0
+		for j = 0; j < config.CodeLength; j++ {
+			if data[j] != 0 {
+				s[i] ^= config.Field.AlphaTo[(i * j) % config.N]
+			}
+		}
+		if s[i] != 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 
@@ -28,8 +188,9 @@ func readP(m int) (n int, p [21]uint8, err error) {
 		fmt.Scanf("%d", &m)
 	}*/
 	if m < 2 || m > 20 {
-		// TODO: Throw a proper error
-		return
+		return n, p,
+		InvalidInputError{fmt.Sprintf("The provided m value (%d) is outside the allowed range (%d-%d).",
+			m, 2, 20)}
 	}
 
 	for i := 1; i < m; i++ {
@@ -61,13 +222,13 @@ func readP(m int) (n int, p [21]uint8, err error) {
 	case 19:
 		p[1], p[5], p[6] = 1, 1, 1
 	}
-	fmt.Printf("p(x) = ")
+	//fmt.Printf("p(x) = ")
 	n = 1
 	for i := 0; i <= m; i++ {
 		n *= 2
-		fmt.Printf("%1d", p[i])
+		//fmt.Printf("%1d", p[i])
 	}
-	fmt.Printf("\n")
+	//fmt.Printf("\n")
 	n = n / 2 - 1
 	/*ninf := (n + 1) / 2 - 1
 	for do := false; !do || length > n || length <= ninf; do = true {
@@ -78,7 +239,9 @@ func readP(m int) (n int, p [21]uint8, err error) {
 	return
 }
 
-func generateGF(m, n int, p [21]uint8) (alphaTo, indexOf [1048576]int, err error) {
+func generateGF(m, n int, p [21]uint8) (field GField, err error) {
+	var alphaTo, indexOf [1048576]int
+
 	mask := 1
 	alphaTo[m] = 0
 	for i := 0; i < m; i++ {
@@ -101,12 +264,17 @@ func generateGF(m, n int, p [21]uint8) (alphaTo, indexOf [1048576]int, err error
 	}
 	indexOf[0] = -1
 
+	field = GField{
+		AlphaTo: alphaTo,
+		IndexOf: indexOf,
+	}
+
 	return
 }
 
-func genPoly(t, n, length int, alphaTo, indexOf [1048576]int) (g [548576]int, k, d int, err error) {
+func genPoly(t, n, length int, field GField) (g [548576]int, k, d int, err error) {
 	var ii, jj, ll, kaux int
-	var aux, nocycles, root, noterms, rdncy int
+	var aux, nocycles, root, noterms, redundancy int
 	var test bool
 	cycle, size, min, zeros := make([][]int, 1024), make([]int, 1024), make([]int, 1024), make([]int, 1024)
 	for i := 0; i < 1024; i++ {
@@ -159,7 +327,7 @@ func genPoly(t, n, length int, alphaTo, indexOf [1048576]int) (g [548576]int, k,
 
 	// Search for roots 1, 2, ..., d - 1 in cycle sets
 	kaux = 0
-	rdncy = 0
+	redundancy = 0
 	for ii = 1; ii <= nocycles; ii++ {
 		min[kaux] = 0
 		test = false
@@ -172,7 +340,7 @@ func genPoly(t, n, length int, alphaTo, indexOf [1048576]int) (g [548576]int, k,
 			}
 		}
 		if min[kaux] != 0 {
-			rdncy += size[min[kaux]]
+			redundancy += size[min[kaux]]
 			kaux++
 		}
 	}
@@ -185,30 +353,32 @@ func genPoly(t, n, length int, alphaTo, indexOf [1048576]int) (g [548576]int, k,
 		}
 	}
 
-	k = length - rdncy
+	k = length - redundancy
 
-	/*if k < 0 {
-		fmt.Println("The parameters are invalid!")
-	}*/
+	if k <= 0 {
+		return g, k, d,
+		UnachievableConfigError{"With the specified number of recoverable errors and code length, " +
+			"no data will be able to be stored."}
+	}
 
 	fmt.Printf("This is a (%d, %d, %d) binary BCH code.\n", length, k, d)
 
 	// Compute the generator polynomial
-	g[0] = alphaTo[zeros[1]]
+	g[0] = field.AlphaTo[zeros[1]]
 	g[1] = 1 // g(x) = (x + zeros[1]) initially
-	for ii = 2; ii <= rdncy; ii++ {
+	for ii = 2; ii <= redundancy; ii++ {
 		g[ii] = 1
 		for jj = ii - 1; jj > 0; jj-- {
 			if g[jj] != 0 {
-				g[jj] = g[jj - 1] ^ alphaTo[(indexOf[g[jj]] + zeros[ii]) % n]
+				g[jj] = g[jj - 1] ^ field.AlphaTo[(field.IndexOf[g[jj]] + zeros[ii]) % n]
 			} else {
 				g[jj] = g[jj - 1]
 			}
 		}
-		g[0] = alphaTo[(indexOf[g[0]] + zeros[ii]) % n]
+		g[0] = field.AlphaTo[(field.IndexOf[g[0]] + zeros[ii]) % n]
 	}
 	fmt.Printf("Generator polynomial:\ng(x) = ")
-	for ii = 0; ii <= rdncy; ii++ {
+	for ii = 0; ii <= redundancy; ii++ {
 		fmt.Printf("%d", g[ii])
 		if ii != 0 && ii % 50 == 0 {
 			fmt.Printf("\n")
@@ -238,7 +408,7 @@ func encodeBCH(length, k int, g [548576]int, data []int) (bb [548576]int, err er
 					bb[j] = bb[j - 1]
 				}
 			}
-			bb[0] = g[0] & feedback // TODO: was &&
+			bb[0] = g[0] & feedback
 		} else {
 			for j = length - k - 1; j > 0; j-- {
 				bb[j] = bb[j - 1]
@@ -250,9 +420,9 @@ func encodeBCH(length, k int, g [548576]int, data []int) (bb [548576]int, err er
 	return
 }
 
-func decodeBCH(length, t, n int, alphaTo, indexOf [1048576]int, recd []int) ([]int, error) {
+func decodeBCH(length, t, n int, field GField, recd []int) ([]int, error) {
 	var i, j, u, q, t2 int
-	var count, synError = 0, 0
+	var count, synError = 0, false
 	elp, d, l, uLu, s := make([][]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1025)
 	for i := 0; i < 1024; i++ {
 		elp[i] = make([]int, 1024)
@@ -267,22 +437,21 @@ func decodeBCH(length, t, n int, alphaTo, indexOf [1048576]int, recd []int) ([]i
 		s[i] = 0
 		for j = 0; j < length; j++ {
 			if recd[j] != 0 {
-				s[i] ^= alphaTo[(i * j) % n]
+				s[i] ^= field.AlphaTo[(i * j) % n]
 			}
 		}
 		if s[i] != 0 {
-			synError = 1 // Set the error flag if the syndrome is non-zero
-			// TODO: If just doing error detection, can stop here
+			synError = true // Set the error flag if the syndrome is non-zero
 		}
 
 		// Convert the syndrome from polynomial to index form
-		s[i] = indexOf[s[i]]
+		s[i] = field.IndexOf[s[i]]
 		//fmt.Printf("%3d ", s[i])
 	}
 	//fmt.Printf("\n")
 
 	// If there are errors, try to correct them
-	if synError != 0 {
+	if synError {
 		// Compute the error location polynomial via the Berlekamp
 		// iterative algorithm. Following the terminology of Lin and
 		// Costello's book :   d[u] is the 'mu'th discrepancy, where
@@ -312,7 +481,7 @@ func decodeBCH(length, t, n int, alphaTo, indexOf [1048576]int, recd []int) ([]i
 				l[u + 1] = l[u]
 				for i = 0; i <= l[u]; i++ {
 					elp[u + 1][i] = elp[u][i]
-					elp[u][i] = indexOf[elp[u][i]]
+					elp[u][i] = field.IndexOf[elp[u][i]]
 				}
 			} else {
 				// Search for words with greatest u_lu[q] for which d[q] != 0
@@ -345,12 +514,12 @@ func decodeBCH(length, t, n int, alphaTo, indexOf [1048576]int, recd []int) ([]i
 				}
 				for i = 0; i <= l[q]; i++ {
 					if elp[q][i] != -1 {
-						elp[u + 1][i + u - q] = alphaTo[(d[u] + n - d[q] + elp[q][i]) % n]
+						elp[u + 1][i + u - q] = field.AlphaTo[(d[u] + n - d[q] + elp[q][i]) % n]
 					}
 				}
 				for i = 0; i <= l[u]; i++ {
 					elp[u + 1][i] ^= elp[u][i]
-					elp[u][i] = indexOf[elp[u][i]]
+					elp[u][i] = field.IndexOf[elp[u][i]]
 				}
 			}
 			uLu[u + 1] = u - l[u + 1]
@@ -359,17 +528,17 @@ func decodeBCH(length, t, n int, alphaTo, indexOf [1048576]int, recd []int) ([]i
 			if u < t2 {
 				// No discrepancy computed on the last iteration
 				if s[u + 1] != -1 {
-					d[u + 1] = alphaTo[s[u + 1]]
+					d[u + 1] = field.AlphaTo[s[u + 1]]
 				} else {
 					d[u + 1] = 0
 				}
 				for i = 1; i <= l[u + 1]; i++ {
 					if s[u + 1 - i] != -1 && elp[u + 1][i] != 0 {
-						d[u + 1] ^= alphaTo[(s[u + 1 - i] + indexOf[elp[u + 1][i]]) % n]
+						d[u + 1] ^= field.AlphaTo[(s[u + 1 - i] + field.IndexOf[elp[u + 1][i]]) % n]
 					}
 				}
 				// Put d[u + 1] into index form
-				d[u + 1] = indexOf[d[u + 1]]
+				d[u + 1] = field.IndexOf[d[u + 1]]
 			}
 		}
 
@@ -377,7 +546,7 @@ func decodeBCH(length, t, n int, alphaTo, indexOf [1048576]int, recd []int) ([]i
 		if l[u] <= t { // Can correct errors
 			// Put elp into index form
 			for i = 0; i <= l[u]; i++ {
-				elp[u][i] = indexOf[elp[u][i]]
+				elp[u][i] = field.IndexOf[elp[u][i]]
 			}
 
 			/*(fmt.Printf("sigma(x) = ")
@@ -397,7 +566,7 @@ func decodeBCH(length, t, n int, alphaTo, indexOf [1048576]int, recd []int) ([]i
 				for j = 1; j <= l[u]; j++ {
 					if reg[j] != -1 {
 						reg[j] = (reg[j] + j) % n
-						q ^= alphaTo[reg[j]]
+						q ^= field.AlphaTo[reg[j]]
 					}
 				}
 				// Store the root and error location number indices
@@ -415,50 +584,12 @@ func decodeBCH(length, t, n int, alphaTo, indexOf [1048576]int, recd []int) ([]i
 					recd[loc[i]] ^= 1
 				}
 			} else {
-				fmt.Println("Incomplete decoding - errors detected.")
+				return nil, DataTooCorruptError{}
 			}
+		} else {
+			return nil, DataTooCorruptError{}
 		}
 	}
 
 	return recd[:], nil
-}
-
-func Encode(codeLength, correctableErrors int, buf *[]int) ([]int, EncodingConfig) {
-	m := int(math.Log2(float64(codeLength))) + 1
-
-	n, p, _ := readP(m)
-	alphaTo, indexOf, _ := generateGF(m, n, p)
-	g, k, _, _ := genPoly(correctableErrors, n, codeLength, alphaTo, indexOf)
-
-	data := make([]int, k)
-	for i := 0; i < k; i++ {
-		data[i] = (*buf)[i]
-	}
-
-	bb, _ := encodeBCH(codeLength, k, g, data)
-
-	// Load the data into the code value (ecc bits followed by original data)
-	recd := make([]int, codeLength)
-	for i := 0; i < codeLength - k; i++ {
-		recd[i] = bb[i]
-	}
-	for i := 0; i < k; i++ {
-		recd[i + codeLength - k] = data[i]
-	}
-
-	for i := 0; i < codeLength; i++ {
-		fmt.Printf("%1d", recd[i])
-		if i != 0 && i % 50 == 0 {
-			fmt.Printf("\n")
-		}
-	}
-	fmt.Printf("\n")
-
-	return recd, EncodingConfig{correctableErrors, n, GField{alphaTo, indexOf}}
-}
-
-func Decode(buf *[]int, config EncodingConfig) []int {
-	recd, _ := decodeBCH(len(*buf), config.MaxCorrectableErrors, config.N, config.Field.AlphaTo, config.Field.IndexOf, *buf)
-
-	return recd
 }
