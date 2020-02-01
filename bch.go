@@ -3,6 +3,7 @@ package bch
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 )
 
@@ -19,12 +20,12 @@ var errpos [1024]int
 var decerror = 0
 
 func ReadP() {
-	fmt.Println("First, enter a value of m such that the code length is")
+	/*fmt.Println("First, enter a value of m such that the code length is")
 	fmt.Println("2**(m-1) - 1 < length <= 2**m - 1")
 	for do := false; !do || m <= 1 || m >= 21; do = true {
 		fmt.Println("Input m (between 2 and 20): ")
 		fmt.Scanf("%d", &m)
-	}
+	}*/
 	if m < 2 || m > 20 {
 		// TODO: Throw a proper error
 		return
@@ -33,9 +34,10 @@ func ReadP() {
 	for i := 1; i < m; i++ {
 		p[i] = 0
 	}
+	p[0], p[m] = 1, 1
 
 	switch m {
-	case 2, 3, 4, 7, 15:
+	case 2, 3, 4, 6, 7, 15:
 		p[1] = 1
 	case 5, 11:
 		p[2] = 1
@@ -66,11 +68,11 @@ func ReadP() {
 	}
 	fmt.Printf("\n")
 	n = n / 2 - 1
-	ninf := (n + 1) / 2 - 1
+	/*ninf := (n + 1) / 2 - 1
 	for do := false; !do || length > n || length <= ninf; do = true {
 		fmt.Printf("Enter the code length (%d < length <= %d): ", ninf, n)
 		fmt.Scanf("%d", &length)
-	}
+	}*/
 }
 
 func GenerateGF() {
@@ -78,13 +80,13 @@ func GenerateGF() {
 	alphaTo[m] = 0
 	for i := 0; i < m; i++ {
 		alphaTo[i] = mask
-		indexOf[alphaTo[i]] = int(i)
+		indexOf[alphaTo[i]] = i
 		if p[i] != 0 {
 			alphaTo[m] ^= mask
 		}
 		mask <<= 1
 	}
-	indexOf[alphaTo[m]] = int(m)
+	indexOf[alphaTo[m]] = m
 	mask >>= 1
 	for i := m + 1; i < n; i++ {
 		if alphaTo[i - 1] >= mask {
@@ -145,8 +147,8 @@ func GenPoly() {
 	}
 	nocycles = jj // The number of cycle sets modulo n
 
-	fmt.Printf("Enter the correcting capability, t: ")
-	fmt.Scanf("%d", &t)
+	/*fmt.Printf("Enter the correcting capability, t: ")
+	fmt.Scanf("%d", &t)*/
 
 	d = 2 * t + 1
 
@@ -241,8 +243,8 @@ func EncodeBCH() {
 
 func DecodeBCH() {
 	var i, j, u, q, t2 int
-	var count, syn_error = 0, 0
-	elp, d, l, u_lu, s := make([][]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1025)
+	var count, synError = 0, 0
+	elp, d, l, uLu, s := make([][]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1025)
 	for i := 0; i < 1024; i++ {
 		elp[i] = make([]int, 1024)
 	}
@@ -260,7 +262,7 @@ func DecodeBCH() {
 			}
 		}
 		if s[i] != 0 {
-			syn_error = 1 // Set the error flag if the syndrome is non-zero
+			synError = 1 // Set the error flag if the syndrome is non-zero
 			// TODO: If just doing error detection, can stop here
 		}
 
@@ -271,7 +273,7 @@ func DecodeBCH() {
 	fmt.Printf("\n")
 
 	// If there are errors, try to correct them
-	if syn_error != 0 {
+	if synError != 0 {
 		// Compute the error location polynomial via the Berlekamp
 		// iterative algorithm. Following the terminology of Lin and
 		// Costello's book :   d[u] is the 'mu'th discrepancy, where
@@ -291,8 +293,8 @@ func DecodeBCH() {
 		}
 		l[0] = 0
 		l[1] = 0
-		u_lu[0] = -1
-		u_lu[1] = 0
+		uLu[0] = -1
+		uLu[1] = 0
 		u = 0
 
 		for do := false; !do || (u < t2 && l[u + 1] <= t); do = true {
@@ -314,7 +316,7 @@ func DecodeBCH() {
 					j = q
 					for do := false; !do || j > 0; do = true {
 						j--
-						if d[j] != -1 && u_lu[q] < u_lu[j] {
+						if d[j] != -1 && uLu[q] < uLu[j] {
 							q = j
 						}
 					}
@@ -342,7 +344,7 @@ func DecodeBCH() {
 					elp[u][i] = indexOf[elp[u][i]]
 				}
 			}
-			u_lu[u + 1] = u - l[u + 1]
+			uLu[u + 1] = u - l[u + 1]
 
 			// Form the (u + 1)th discrepancy
 			if u < t2 {
@@ -410,6 +412,46 @@ func DecodeBCH() {
 	}
 }
 
+func Encode(codeLength, correctableErrors int, buf *[]int) []int {
+	m = int(math.Log2(float64(codeLength))) + 1
+	length = codeLength
+	t = correctableErrors
+
+	ReadP()
+	GenerateGF()
+	GenPoly()
+
+	for i := 0; i < k; i++ {
+		data[i] = (*buf)[i]
+	}
+
+	EncodeBCH()
+
+	// Load the data into the code value (ecc bits followed by original data)
+	for i := 0; i < length - k; i++ {
+		recd[i] = bb[i]
+	}
+	for i := 0; i < k; i++ {
+		recd[i + length - k] = data[i]
+	}
+
+	for i := 0; i < length; i++ {
+		fmt.Printf("%1d", recd[i])
+		if i != 0 && i % 50 == 0 {
+			fmt.Printf("\n")
+		}
+	}
+	fmt.Printf("\n")
+
+	return recd[:length]
+}
+
+func Decode(buf *[]int) []int {
+	DecodeBCH()
+
+	return recd[:length]
+}
+
 func Man() {
 	ReadP()
 	GenerateGF()
@@ -421,6 +463,8 @@ func Man() {
 	for i := 0; i < k; i++ {
 		data[i] = (rand.Int() & 65536) >> 16
 	}
+
+	fmt.Println(data[:k])
 
 	EncodeBCH()
 
@@ -467,14 +511,14 @@ func Man() {
 
 	// Print out the original and decoded data
 	fmt.Println("Results:")
-	fmt.Printf("Original data = ")
+	fmt.Println("Original data = ")
 	for i := 0; i < k; i++ {
 		fmt.Printf("%1d", data[i])
 		if i != 0 && i % 50 == 0 {
 			fmt.Printf("\n")
 		}
 	}
-	fmt.Printf("\nRecovered data = ")
+	fmt.Printf("\nRecovered data = \n")
 	for i := length - k; i < length; i++ {
 		fmt.Printf("%1d", recd[i])
 		if i - length + k != 0 && (i - length + k) % 50 == 0 {
