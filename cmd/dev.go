@@ -57,7 +57,7 @@ func main() {
 	corruptData(&code, int(rand.Int63n(int64(12))))
 	fmt.Printf("Corrupted data: %v\n", code)
 	fmt.Println("Is data corrupt?", bch.IsDataCorrupted(config, code))
-	recv, errors, err := bch.Decode(&code, config)
+	recv, errors, err := bch.Decode(config, &code)
 	if err != nil {
 		fmt.Println(err.Error())
 	}

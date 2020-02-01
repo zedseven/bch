@@ -130,7 +130,7 @@ func Encode(codeLength, correctableErrors int, buf *[]int) (recd []int, config E
 }
 
 // Decode decodes a buffer of bits according to an EncodingConfig.
-func Decode(buf *[]int, config EncodingConfig) (recd []int, errors int, err error) {
+func Decode(config EncodingConfig, buf *[]int) (recd []int, errors int, err error) {
 	recd, errors, err = decodeBCH(config.CodeLength, config.MaxCorrectableErrors, config.N, config.Field, *buf)
 	if err != nil {
 		return
