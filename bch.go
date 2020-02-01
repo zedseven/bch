@@ -1,4 +1,5 @@
 // Package bch facilitates Bose-Chaudhuri-Hocquenghem (BCH) codes and error checking.
+// Note that the basis of this package is ported from the example at http://www.eccpage.com/bch3.c.
 package bch
 
 import (
@@ -8,22 +9,30 @@ import (
 
 // EncodingConfig stores all the computed values from encoding that are necessary for decoding later.
 type EncodingConfig struct {
+	// The maximum number of correctable errors allowed by the configuration.
 	MaxCorrectableErrors int
+	// An internal value used in decoding.
 	N                    int
+	// The Galois field used in the encoding process.
 	Field                GField
+	// The length (in bits) of the encoded data.
 	CodeLength           int
+	// The number of bits of CodeLength that are able to store data.
 	StorageBits          int // k
+	// An internal value.
 	D                    int
 }
 
-// BCHNotation returns the standard notation for a BCH configuration of the EncodingConfig.
-func (c EncodingConfig) BCHNotation() string {
-	return fmt.Sprintf("(%d, %d, %d)", c.CodeLength, c.StorageBits, c.D)
+// String returns the standard notation for a binary BCH code configuration of the EncodingConfig.
+func (c EncodingConfig) String() string {
+	return fmt.Sprintf("(%d, %d, %d) binary BCH code", c.CodeLength, c.StorageBits, c.D)
 }
 
 // GField stores a Galois field for passing between the Encode() and Decode() operations.
 type GField struct {
+	// Part of the field.
 	AlphaTo [1048576]int
+	// Part of the field.
 	IndexOf [1048576]int
 }
 
@@ -87,8 +96,11 @@ func Encode(codeLength, correctableErrors int, buf *[]int) (recd []int, config E
 	}
 
 	data := make([]int, k)
-	for i := 0; i < k; i++ {
+	for i := 0; i < k && i < len(*buf); i++ {
 		data[i] = (*buf)[i]
+	}
+	for i := len(*buf); i < k; i++ {
+		data[i] = 0
 	}
 
 	bb, err := encodeBCH(codeLength, k, g, data)
@@ -105,14 +117,6 @@ func Encode(codeLength, correctableErrors int, buf *[]int) (recd []int, config E
 		recd[i + codeLength - k] = data[i]
 	}
 
-	/*for i := 0; i < codeLength; i++ {
-		fmt.Printf("%1d", recd[i])
-		if i != 0 && i % 50 == 0 {
-			fmt.Printf("\n")
-		}
-	}
-	fmt.Printf("\n")*/
-
 	config = EncodingConfig{
 		MaxCorrectableErrors: correctableErrors,
 		N:                    n,
@@ -126,9 +130,12 @@ func Encode(codeLength, correctableErrors int, buf *[]int) (recd []int, config E
 }
 
 // Decode decodes a buffer of bits according to an EncodingConfig.
-func Decode(buf *[]int, config EncodingConfig) (recd []int, err error) {
-	recd, err = decodeBCH(config.CodeLength, config.MaxCorrectableErrors, config.N, config.Field, *buf)
-
+func Decode(buf *[]int, config EncodingConfig) (recd []int, errors int, err error) {
+	recd, errors, err = decodeBCH(config.CodeLength, config.MaxCorrectableErrors, config.N, config.Field, *buf)
+	if err != nil {
+		return
+	}
+	recd = recd[config.CodeLength - config.StorageBits:]
 	return
 }
 
@@ -181,12 +188,6 @@ func IsDataCorrupted(config EncodingConfig, data []int) bool {
 
 
 func readP(m int) (n int, p [21]uint8, err error) {
-	/*fmt.Println("First, enter a value of m such that the code length is")
-	fmt.Println("2**(m-1) - 1 < length <= 2**m - 1")
-	for do := false; !do || m <= 1 || m >= 21; do = true {
-		fmt.Println("Input m (between 2 and 20): ")
-		fmt.Scanf("%d", &m)
-	}*/
 	if m < 2 || m > 20 {
 		return n, p,
 		InvalidInputError{fmt.Sprintf("The provided m value (%d) is outside the allowed range (%d-%d).",
@@ -222,19 +223,11 @@ func readP(m int) (n int, p [21]uint8, err error) {
 	case 19:
 		p[1], p[5], p[6] = 1, 1, 1
 	}
-	//fmt.Printf("p(x) = ")
 	n = 1
 	for i := 0; i <= m; i++ {
 		n *= 2
-		//fmt.Printf("%1d", p[i])
 	}
-	//fmt.Printf("\n")
 	n = n / 2 - 1
-	/*ninf := (n + 1) / 2 - 1
-	for do := false; !do || length > n || length <= ninf; do = true {
-		fmt.Printf("Enter the code length (%d < length <= %d): ", ninf, n)
-		fmt.Scanf("%d", &length)
-	}*/
 
 	return
 }
@@ -286,9 +279,7 @@ func genPoly(t, n, length int, field GField) (g [548576]int, k, d int, err error
 	cycle[1][0] = 1
 	size[1] = 1
 	jj = 1
-	/*if m > 9 {
-		fmt.Printf("Computing cycle sets modulo %d\n", n)
-	}*/
+
 	for do := false; !do || ll < n - 1; do = true {
 		// Generate the jj-th cycle set
 		ii = 0
@@ -319,9 +310,6 @@ func genPoly(t, n, length int, field GField) (g [548576]int, k, d int, err error
 		}
 	}
 	nocycles = jj // The number of cycle sets modulo n
-
-	/*fmt.Printf("Enter the correcting capability, t: ")
-	fmt.Scanf("%d", &t)*/
 
 	d = 2 * t + 1
 
@@ -361,8 +349,6 @@ func genPoly(t, n, length int, field GField) (g [548576]int, k, d int, err error
 			"no data will be able to be stored."}
 	}
 
-	fmt.Printf("This is a (%d, %d, %d) binary BCH code.\n", length, k, d)
-
 	// Compute the generator polynomial
 	g[0] = field.AlphaTo[zeros[1]]
 	g[1] = 1 // g(x) = (x + zeros[1]) initially
@@ -377,14 +363,6 @@ func genPoly(t, n, length int, field GField) (g [548576]int, k, d int, err error
 		}
 		g[0] = field.AlphaTo[(field.IndexOf[g[0]] + zeros[ii]) % n]
 	}
-	fmt.Printf("Generator polynomial:\ng(x) = ")
-	for ii = 0; ii <= redundancy; ii++ {
-		fmt.Printf("%d", g[ii])
-		if ii != 0 && ii % 50 == 0 {
-			fmt.Printf("\n")
-		}
-	}
-	fmt.Printf("\n")
 
 	return
 }
@@ -420,19 +398,18 @@ func encodeBCH(length, k int, g [548576]int, data []int) (bb [548576]int, err er
 	return
 }
 
-func decodeBCH(length, t, n int, field GField, recd []int) ([]int, error) {
+func decodeBCH(length, t, n int, field GField, recd []int) ([]int, int, error) {
 	var i, j, u, q, t2 int
 	var count, synError = 0, false
 	elp, d, l, uLu, s := make([][]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1025)
 	for i := 0; i < 1024; i++ {
 		elp[i] = make([]int, 1024)
 	}
-	root, loc, /*err,*/ reg := make([]int, 200), make([]int, 200)/*, make([]int, 1024)*/, make([]int, 201)
+	root, loc, reg := make([]int, 200), make([]int, 200), make([]int, 201)
 
 	t2 = 2 * t
 
 	// First, form the syndromes
-	//fmt.Printf("S(x) = ")
 	for i = 1; i <= t2; i++ {
 		s[i] = 0
 		for j = 0; j < length; j++ {
@@ -446,9 +423,7 @@ func decodeBCH(length, t, n int, field GField, recd []int) ([]int, error) {
 
 		// Convert the syndrome from polynomial to index form
 		s[i] = field.IndexOf[s[i]]
-		//fmt.Printf("%3d ", s[i])
 	}
-	//fmt.Printf("\n")
 
 	// If there are errors, try to correct them
 	if synError {
@@ -549,13 +524,6 @@ func decodeBCH(length, t, n int, field GField, recd []int) ([]int, error) {
 				elp[u][i] = field.IndexOf[elp[u][i]]
 			}
 
-			/*(fmt.Printf("sigma(x) = ")
-			for i = 0; i <= l[u]; i++ {
-				fmt.Printf("%3d ", elp[u][i])
-			}
-			fmt.Printf("\n")
-			fmt.Printf("Roots: ")*/
-
 			// Chien search: find the roots of the error location polynomial
 			for i = 1; i <= l[u]; i++ {
 				reg[i] = elp[u][i]
@@ -574,22 +542,20 @@ func decodeBCH(length, t, n int, field GField, recd []int) ([]int, error) {
 					root[count] = i
 					loc[count] = n - i
 					count++
-					//fmt.Printf("%3d ", n - i)
 				}
 			}
-			//fmt.Printf("\n")
 			if count == l[u] {
 				// Number of roots = degree of elp, hence <= t errors
 				for i = 0; i < l[u]; i++ {
 					recd[loc[i]] ^= 1
 				}
 			} else {
-				return nil, DataTooCorruptError{}
+				return nil, -1, DataTooCorruptError{}
 			}
 		} else {
-			return nil, DataTooCorruptError{}
+			return nil, -1, DataTooCorruptError{}
 		}
 	}
 
-	return recd[:], nil
+	return recd[:], count, nil
 }

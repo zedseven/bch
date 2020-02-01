@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/zedseven/bch"
 	"math/rand"
+	"time"
 )
 
 func corruptData(data *[]int, errors int) {
@@ -43,19 +44,23 @@ func makeRange(max int64) []int64 {
 }
 
 func main() {
-	lol := []int{1, 1, 1, 0, 0, 1, 0, 0}
-	fmt.Printf("Original data: %v\n", lol)
-	data, config, err := bch.Encode(32, 4, &lol)
+	rand.Seed(time.Now().Unix())
+
+	data := []int{1, 1, 1, 0, 0, 1, 0, 0}
+	fmt.Printf("Original data: %v\n", data)
+	code, config, err := bch.Encode(64, 8, &data)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-	fmt.Printf("Encoded data:   %v\n", data)
-	corruptData(&data, 4)
-	fmt.Printf("Corrupted data: %v\n", data)
-	fmt.Println("Is data corrupt?", bch.IsDataCorrupted(config, data))
-	recv, err := bch.Decode(&data, config)
+	fmt.Printf("This is a %v.\n", config)
+	fmt.Printf("Encoded data:   %v\n", code)
+	corruptData(&code, int(rand.Int63n(int64(12))))
+	fmt.Printf("Corrupted data: %v\n", code)
+	fmt.Println("Is data corrupt?", bch.IsDataCorrupted(config, code))
+	recv, errors, err := bch.Decode(&code, config)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 	fmt.Printf("Decoded data:   %v\n", recv)
+	fmt.Printf("There were %d error(s) in the corrupt data.", errors)
 }
