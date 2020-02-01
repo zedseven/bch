@@ -14,4 +14,4 @@ See [the GoDoc manual](https://godoc.org/github.com/zedseven/bch) for documentat
 ## An important note
 Please note I did not write the basis of this package - I ported it over from [an excellent example in C on ECCPage](http://www.eccpage.com/bch3.c).
 I did, however, clean it up and build the rest of the package around the rudimentary example.
-Credit goes to Robert Morelos-Zaragoza for the base example.
+Credit goes to Robert Morelos-Zaragoza for the base code.
