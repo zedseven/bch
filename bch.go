@@ -7,6 +7,13 @@ import (
 	"math"
 )
 
+type cachedTotalSize struct {
+	dataLength        int
+	correctableErrors int
+}
+
+var cachedTotalSizes = make(map[cachedTotalSize]int)
+
 // EncodingConfig stores all the computed values from encoding that are necessary for decoding later.
 type EncodingConfig struct {
 	// The maximum number of correctable errors allowed by the configuration.
@@ -162,6 +169,28 @@ func StorageBitsForConfig(codeLength, correctableErrors int) (int, error) {
 	}
 
 	return k, nil
+}
+
+// TotalBitsForConfig is a naïve approach to finding the number of total bits required for a specific number of data
+// bits and correctable errors. The function caches it's results.
+func TotalBitsForConfig(dataLength, correctableErrors int) (int, error) {
+	key := cachedTotalSize{dataLength, correctableErrors}
+	if totalSize, ok := cachedTotalSizes[key]; ok {
+		return totalSize, nil
+	}
+	lastVal := -1
+	for i := dataLength + 1; true; i++ {
+		if testDataLength, _ := StorageBitsForConfig(i, correctableErrors); testDataLength == dataLength {
+			cachedTotalSizes[key] = i
+			return i, nil
+		} else if lastVal >= 0 && lastVal < dataLength && testDataLength >= dataLength {
+			cachedTotalSizes[key] = i
+			return i, nil
+		} else {
+			lastVal = i
+		}
+	}
+	return -1, nil
 }
 
 // IsDataCorrupted determines whether or not provided data is corrupted.

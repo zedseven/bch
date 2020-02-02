@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/zedseven/bch"
 	"math/rand"
 	"time"
+
+	"github.com/zedseven/bch"
 )
 
 func corruptData(data *[]int, errors int) {
@@ -46,9 +47,19 @@ func makeRange(max int64) []int64 {
 func main() {
 	rand.Seed(time.Now().Unix())
 
+
+	for y := 1; y < 16; y++ {
+		for x := 1; x < 16; x++ {
+			res, _ := bch.TotalBitsForConfig(x, y)
+			//res, _ := bch.TotalBitsForConfig(5, 8)
+			fmt.Printf("%3d data bits, %2d error-fixes: %3d\n", x, y, res)
+		}
+	}
+
+
 	data := []int{1, 1, 1, 0, 0, 1, 0, 0}
 	fmt.Printf("Original data: %v\n", data)
-	code, config, err := bch.Encode(64, 8, &data)
+	code, config, err := bch.Encode(256, 20, &data)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
