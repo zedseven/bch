@@ -48,18 +48,18 @@ func main() {
 	rand.Seed(time.Now().Unix())
 
 
-	for y := 1; y < 16; y++ {
+	/*for y := 1; y < 16; y++ {
 		for x := 1; x < 16; x++ {
 			res, _ := bch.TotalBitsForConfig(x, y)
 			//res, _ := bch.TotalBitsForConfig(5, 8)
 			fmt.Printf("%3d data bits, %2d error-fixes: %3d\n", x, y, res)
 		}
-	}
+	}*/
 
 
 	data := []int{1, 1, 1, 0, 0, 1, 0, 0}
 	fmt.Printf("Original data: %v\n", data)
-	code, config, err := bch.Encode(256, 20, &data)
+	code, config, err := bch.Encode(53, 8, &data)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -69,6 +69,26 @@ func main() {
 	fmt.Printf("Corrupted data: %v\n", code)
 	fmt.Println("Is data corrupt?", bch.IsDataCorrupted(config, code))
 	recv, errors, err := bch.Decode(config, &code)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	fmt.Printf("Decoded data:   %v\n", recv)
+	fmt.Printf("There were %d error(s) in the corrupt data.", errors)
+
+	fmt.Printf("\n\n")
+
+	data = []int{0, 1, 0, 0, 1, 1, 0, 0}
+	fmt.Printf("Original data: %v\n", data)
+	code, err = bch.EncodeWithConfig(config, &data)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	fmt.Printf("This is a %v.\n", config)
+	fmt.Printf("Encoded data:   %v\n", code)
+	corruptData(&code, int(rand.Int63n(int64(12))))
+	fmt.Printf("Corrupted data: %v\n", code)
+	fmt.Println("Is data corrupt?", bch.IsDataCorrupted(config, code))
+	recv, errors, err = bch.Decode(config, &code)
 	if err != nil {
 		fmt.Println(err.Error())
 	}

@@ -16,27 +16,29 @@ var cachedTotalSizes = make(map[cachedTotalSize]int)
 
 // EncodingConfig stores all the computed values from encoding that are necessary for decoding later.
 type EncodingConfig struct {
-	// The maximum number of correctable errors allowed by the configuration.
+	// MaxCorrectableErrors is the maximum number of correctable errors allowed by the configuration.
 	MaxCorrectableErrors int
-	// An internal value used in decoding.
-	N                    int
-	// The Galois field used in the encoding process.
-	Field                GField
 	// The length (in bits) of the encoded data.
 	CodeLength           int
 	// The number of bits of CodeLength that are able to store data.
 	StorageBits          int // k
+	// The Galois field used in the encoding process.
+	field                gField
+	// The generator polynomial used in the encoding process.
+	generator            [548576]int
+	// An internal value used in decoding.
+	n                    int
 	// An internal value.
-	D                    int
+	d                    int
 }
 
 // String returns the standard notation for a binary BCH code configuration of the EncodingConfig.
 func (c EncodingConfig) String() string {
-	return fmt.Sprintf("(%d, %d, %d) binary BCH code", c.CodeLength, c.StorageBits, c.D)
+	return fmt.Sprintf("(%d, %d, %d) binary BCH code", c.CodeLength, c.StorageBits, c.d)
 }
 
-// GField stores a Galois field for passing between the Encode() and Decode() operations.
-type GField struct {
+// gField stores a Galois field for passing between the Encode() and Decode() operations.
+type gField struct {
 	// Part of the field.
 	AlphaTo [1048576]int
 	// Part of the field.
@@ -83,10 +85,8 @@ func (e DataTooCorruptError) Error() string {
 	return "The data provided has been corrupted too badly to be able to recover."
 }
 
-// Encode encodes the first k bits of the data in buf based on how many parity bits are required to satisfy
-// the maximum correctable number of errors specified by correctableErrors. Note that the maximum correctable
-// errors does not scale linearly with the number of parity bits required for the task.
-func Encode(codeLength, correctableErrors int, buf *[]int) (recd []int, config EncodingConfig, err error) {
+// CreateConfig creates an EncodingConfig to be re-used for multiple encoding operations with the same configuration.
+func CreateConfig(codeLength, correctableErrors int) (config *EncodingConfig, err error) {
 	m := int(math.Log2(float64(codeLength))) + 1
 
 	n, p, err := readP(m)
@@ -102,43 +102,66 @@ func Encode(codeLength, correctableErrors int, buf *[]int) (recd []int, config E
 		return
 	}
 
-	data := make([]int, k)
-	for i := 0; i < k && i < len(*buf); i++ {
+	config = &EncodingConfig{
+		MaxCorrectableErrors: correctableErrors,
+		CodeLength:           codeLength,
+		StorageBits:          k,
+		field:                field,
+		generator:            g,
+		n:                    n,
+		d:                    d,
+	}
+
+	return
+}
+
+// Encode encodes the first k bits of the data in buf based on how many parity bits are required to satisfy
+// the maximum correctable number of errors specified by correctableErrors. Note that the maximum correctable
+// errors does not scale linearly with the number of parity bits required for the task.
+func Encode(codeLength, correctableErrors int, buf *[]int) (recd []int, config *EncodingConfig, err error) {
+	config, err = CreateConfig(codeLength, correctableErrors)
+	if err != nil {
+		return
+	}
+
+	recd, err = EncodeWithConfig(config, buf)
+
+	return
+}
+
+// EncodeWithConfig does exactly the same thing as Encode, but takes an EncodingConfig as an argument. This should be
+// used if the same config would be used multiple times.
+func EncodeWithConfig(config *EncodingConfig, buf *[]int) (recd []int, err error) {
+	//return Encode(cnf.CodeLength, cnf.MaxCorrectableErrors, buf
+
+	data := make([]int, config.StorageBits)
+	for i := 0; i < config.StorageBits && i < len(*buf); i++ {
 		data[i] = (*buf)[i]
 	}
-	for i := len(*buf); i < k; i++ {
+	for i := len(*buf); i < config.StorageBits; i++ {
 		data[i] = 0
 	}
 
-	bb, err := encodeBCH(codeLength, k, g, data)
+	bb, err := encodeBCH(config.CodeLength, config.StorageBits, config.generator, data)
 	if err != nil {
 		return
 	}
 
 	// Load the data into the code value (ecc bits followed by original data)
-	recd = make([]int, codeLength)
-	for i := 0; i < codeLength - k; i++ {
+	recd = make([]int, config.CodeLength)
+	for i := 0; i < config.CodeLength - config.StorageBits; i++ {
 		recd[i] = bb[i]
 	}
-	for i := 0; i < k; i++ {
-		recd[i + codeLength - k] = data[i]
-	}
-
-	config = EncodingConfig{
-		MaxCorrectableErrors: correctableErrors,
-		N:                    n,
-		Field:                field,
-		CodeLength:           codeLength,
-		StorageBits:          k,
-		D:                    d,
+	for i := 0; i < config.StorageBits; i++ {
+		recd[i + config.CodeLength - config.StorageBits] = data[i]
 	}
 
 	return
 }
 
 // Decode decodes a buffer of bits according to an EncodingConfig.
-func Decode(config EncodingConfig, buf *[]int) (recd []int, errors int, err error) {
-	recd, errors, err = decodeBCH(config.CodeLength, config.MaxCorrectableErrors, config.N, config.Field, *buf)
+func Decode(config *EncodingConfig, buf *[]int) (recd []int, errors int, err error) {
+	recd, errors, err = decodeBCH(config.CodeLength, config.MaxCorrectableErrors, config.n, config.field, *buf)
 	if err != nil {
 		return
 	}
@@ -194,7 +217,7 @@ func TotalBitsForConfig(dataLength, correctableErrors int) (int, error) {
 }
 
 // IsDataCorrupted determines whether or not provided data is corrupted.
-func IsDataCorrupted(config EncodingConfig, data []int) bool {
+func IsDataCorrupted(config *EncodingConfig, data []int) bool {
 	var i, j, t2 int
 	s := make([]int, 1025)
 
@@ -204,7 +227,7 @@ func IsDataCorrupted(config EncodingConfig, data []int) bool {
 		s[i] = 0
 		for j = 0; j < config.CodeLength; j++ {
 			if data[j] != 0 {
-				s[i] ^= config.Field.AlphaTo[(i * j) % config.N]
+				s[i] ^= config.field.AlphaTo[(i * j) % config.n]
 			}
 		}
 		if s[i] != 0 {
@@ -261,7 +284,7 @@ func readP(m int) (n int, p [21]uint8, err error) {
 	return
 }
 
-func generateGF(m, n int, p [21]uint8) (field GField, err error) {
+func generateGF(m, n int, p [21]uint8) (field gField, err error) {
 	var alphaTo, indexOf [1048576]int
 
 	mask := 1
@@ -286,7 +309,7 @@ func generateGF(m, n int, p [21]uint8) (field GField, err error) {
 	}
 	indexOf[0] = -1
 
-	field = GField{
+	field = gField{
 		AlphaTo: alphaTo,
 		IndexOf: indexOf,
 	}
@@ -294,7 +317,7 @@ func generateGF(m, n int, p [21]uint8) (field GField, err error) {
 	return
 }
 
-func genPoly(t, n, length int, field GField) (g [548576]int, k, d int, err error) {
+func genPoly(t, n, length int, field gField) (g [548576]int, k, d int, err error) {
 	var ii, jj, ll, kaux int
 	var aux, nocycles, root, noterms, redundancy int
 	var test bool
@@ -427,7 +450,7 @@ func encodeBCH(length, k int, g [548576]int, data []int) (bb [548576]int, err er
 	return
 }
 
-func decodeBCH(length, t, n int, field GField, recd []int) ([]int, int, error) {
+func decodeBCH(length, t, n int, field gField, recd []int) ([]int, int, error) {
 	var i, j, u, q, t2 int
 	var count, synError = 0, false
 	elp, d, l, uLu, s := make([][]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1026), make([]int, 1025)
