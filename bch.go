@@ -1,4 +1,4 @@
-// Package bch facilitates Bose-Chaudhuri-Hocquenghem (BCH) codes and error checking.
+// Package bch facilitates  the use of Bose-Chaudhuri-Hocquenghem (BCH) codes and error checking.
 // Note that the basis of this package is ported from the example at http://www.eccpage.com/bch3.c.
 package bch
 
@@ -26,9 +26,7 @@ type EncodingConfig struct {
 	field                gField
 	// The generator polynomial used in the encoding process.
 	generator            [548576]int
-	// An internal value used in decoding.
 	n                    int
-	// An internal value.
 	d                    int
 }
 
@@ -39,10 +37,8 @@ func (c EncodingConfig) String() string {
 
 // gField stores a Galois field for passing between the Encode() and Decode() operations.
 type gField struct {
-	// Part of the field.
-	AlphaTo [1048576]int
-	// Part of the field.
-	IndexOf [1048576]int
+	alphaTo [1048576]int
+	indexOf [1048576]int
 }
 
 // InvalidInputError is thrown when Encode() is asked to encode with settings that are invalid.
@@ -227,7 +223,7 @@ func IsDataCorrupted(config *EncodingConfig, data []int) bool {
 		s[i] = 0
 		for j = 0; j < config.CodeLength; j++ {
 			if data[j] != 0 {
-				s[i] ^= config.field.AlphaTo[(i * j) % config.n]
+				s[i] ^= config.field.alphaTo[(i * j) % config.n]
 			}
 		}
 		if s[i] != 0 {
@@ -310,8 +306,8 @@ func generateGF(m, n int, p [21]uint8) (field gField, err error) {
 	indexOf[0] = -1
 
 	field = gField{
-		AlphaTo: alphaTo,
-		IndexOf: indexOf,
+		alphaTo: alphaTo,
+		indexOf: indexOf,
 	}
 
 	return
@@ -402,18 +398,18 @@ func genPoly(t, n, length int, field gField) (g [548576]int, k, d int, err error
 	}
 
 	// Compute the generator polynomial
-	g[0] = field.AlphaTo[zeros[1]]
+	g[0] = field.alphaTo[zeros[1]]
 	g[1] = 1 // g(x) = (x + zeros[1]) initially
 	for ii = 2; ii <= redundancy; ii++ {
 		g[ii] = 1
 		for jj = ii - 1; jj > 0; jj-- {
 			if g[jj] != 0 {
-				g[jj] = g[jj - 1] ^ field.AlphaTo[(field.IndexOf[g[jj]] + zeros[ii]) % n]
+				g[jj] = g[jj - 1] ^ field.alphaTo[(field.indexOf[g[jj]] + zeros[ii]) % n]
 			} else {
 				g[jj] = g[jj - 1]
 			}
 		}
-		g[0] = field.AlphaTo[(field.IndexOf[g[0]] + zeros[ii]) % n]
+		g[0] = field.alphaTo[(field.indexOf[g[0]] + zeros[ii]) % n]
 	}
 
 	return
@@ -466,7 +462,7 @@ func decodeBCH(length, t, n int, field gField, recd []int) ([]int, int, error) {
 		s[i] = 0
 		for j = 0; j < length; j++ {
 			if recd[j] != 0 {
-				s[i] ^= field.AlphaTo[(i * j) % n]
+				s[i] ^= field.alphaTo[(i * j) % n]
 			}
 		}
 		if s[i] != 0 {
@@ -474,7 +470,7 @@ func decodeBCH(length, t, n int, field gField, recd []int) ([]int, int, error) {
 		}
 
 		// Convert the syndrome from polynomial to index form
-		s[i] = field.IndexOf[s[i]]
+		s[i] = field.indexOf[s[i]]
 	}
 
 	// If there are errors, try to correct them
@@ -508,7 +504,7 @@ func decodeBCH(length, t, n int, field gField, recd []int) ([]int, int, error) {
 				l[u + 1] = l[u]
 				for i = 0; i <= l[u]; i++ {
 					elp[u + 1][i] = elp[u][i]
-					elp[u][i] = field.IndexOf[elp[u][i]]
+					elp[u][i] = field.indexOf[elp[u][i]]
 				}
 			} else {
 				// Search for words with greatest u_lu[q] for which d[q] != 0
@@ -541,12 +537,12 @@ func decodeBCH(length, t, n int, field gField, recd []int) ([]int, int, error) {
 				}
 				for i = 0; i <= l[q]; i++ {
 					if elp[q][i] != -1 {
-						elp[u + 1][i + u - q] = field.AlphaTo[(d[u] + n - d[q] + elp[q][i]) % n]
+						elp[u + 1][i + u - q] = field.alphaTo[(d[u] + n - d[q] + elp[q][i]) % n]
 					}
 				}
 				for i = 0; i <= l[u]; i++ {
 					elp[u + 1][i] ^= elp[u][i]
-					elp[u][i] = field.IndexOf[elp[u][i]]
+					elp[u][i] = field.indexOf[elp[u][i]]
 				}
 			}
 			uLu[u + 1] = u - l[u + 1]
@@ -555,17 +551,17 @@ func decodeBCH(length, t, n int, field gField, recd []int) ([]int, int, error) {
 			if u < t2 {
 				// No discrepancy computed on the last iteration
 				if s[u + 1] != -1 {
-					d[u + 1] = field.AlphaTo[s[u + 1]]
+					d[u + 1] = field.alphaTo[s[u + 1]]
 				} else {
 					d[u + 1] = 0
 				}
 				for i = 1; i <= l[u + 1]; i++ {
 					if s[u + 1 - i] != -1 && elp[u + 1][i] != 0 {
-						d[u + 1] ^= field.AlphaTo[(s[u + 1 - i] + field.IndexOf[elp[u + 1][i]]) % n]
+						d[u + 1] ^= field.alphaTo[(s[u + 1 - i] + field.indexOf[elp[u + 1][i]]) % n]
 					}
 				}
 				// Put d[u + 1] into index form
-				d[u + 1] = field.IndexOf[d[u + 1]]
+				d[u + 1] = field.indexOf[d[u + 1]]
 			}
 		}
 
@@ -573,7 +569,7 @@ func decodeBCH(length, t, n int, field gField, recd []int) ([]int, int, error) {
 		if l[u] <= t { // Can correct errors
 			// Put elp into index form
 			for i = 0; i <= l[u]; i++ {
-				elp[u][i] = field.IndexOf[elp[u][i]]
+				elp[u][i] = field.indexOf[elp[u][i]]
 			}
 
 			// Chien search: find the roots of the error location polynomial
@@ -586,7 +582,7 @@ func decodeBCH(length, t, n int, field gField, recd []int) ([]int, int, error) {
 				for j = 1; j <= l[u]; j++ {
 					if reg[j] != -1 {
 						reg[j] = (reg[j] + j) % n
-						q ^= field.AlphaTo[reg[j]]
+						q ^= field.alphaTo[reg[j]]
 					}
 				}
 				// Store the root and error location number indices
