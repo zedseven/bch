@@ -8,7 +8,7 @@ import (
 	"github.com/zedseven/bch"
 )
 
-func corruptData(data *[]int, errors int) {
+func corruptData(data *[]uint8, errors int) {
 	f := randIndex(len(*data))
 	for i := 0; i < errors; i++ {
 		l, _ := f()
@@ -57,7 +57,7 @@ func main() {
 	}*/
 
 
-	data := []int{1, 1, 1, 0, 0, 1, 0, 0}
+	data := []uint8{1, 1, 1, 0, 0, 1, 0, 0}
 	fmt.Printf("Original data: %v\n", data)
 	code, config, err := bch.Encode(53, 8, &data)
 	if err != nil {
@@ -77,7 +77,7 @@ func main() {
 
 	fmt.Printf("\n\n")
 
-	data = []int{0, 1, 0, 0, 1, 1, 0, 0}
+	data = []uint8{0, 1, 0, 0, 1, 1, 0, 0}
 	fmt.Printf("Original data: %v\n", data)
 	code, err = bch.EncodeWithConfig(config, &data)
 	if err != nil {
