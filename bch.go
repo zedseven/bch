@@ -165,7 +165,7 @@ func Decode(config *EncodingConfig, buf *[]uint8) (recd []uint8, errors int, err
 // StorageBitsForConfig determines the number of bits able to be used for storage with a given configuration.
 func StorageBitsForConfig(codeLength, correctableErrors int) (int, error) {
 	if codeLength >= 1024 {
-		return 0, &UnachievableConfigError{}
+		return 0, &UnachievableConfigError{"The specified configuration is beyond the scope of the package."}
 	}
 
 	m := int(math.Log2(float64(codeLength))) + 1
@@ -181,7 +181,7 @@ func StorageBitsForConfig(codeLength, correctableErrors int) (int, error) {
 	_, k, _, err := genPoly(correctableErrors, n, codeLength, field)
 	if err != nil {
 		switch err.(type) {
-		case *UnachievableConfigError:
+		case UnachievableConfigError, *UnachievableConfigError:
 			return 0, nil
 		default:
 			return k, err
@@ -333,6 +333,11 @@ func generateGF(m, n int, p [21]uint8) (field gField, err error) {
 }
 
 func genPoly(t, n, length int, field gField) (g [548576]int, k, d int, err error) {
+	if length >= 1024 {
+		err = &UnachievableConfigError{"The specified configuration is beyond the scope of the package."}
+		return
+	}
+
 	var ii, jj, ll, kaux int
 	var aux, nocycles, root, noterms, redundancy int
 	var test bool
