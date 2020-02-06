@@ -35,6 +35,11 @@ func (c EncodingConfig) ChecksumBits() int {
 	return c.CodeLength - c.StorageBits
 }
 
+// ECCRatio simply returns the ratio of maximum correctable errors to number of bits used.
+func (c EncodingConfig) ECCRatio() float64 {
+	return float64(c.MaxCorrectableErrors) / float64(c.CodeLength)
+}
+
 // String returns the standard notation for a binary BCH code configuration of the EncodingConfig.
 func (c EncodingConfig) String() string {
 	return fmt.Sprintf("(%d, %d, %d) binary BCH code", c.CodeLength, c.StorageBits, c.d)
