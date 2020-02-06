@@ -30,6 +30,11 @@ type EncodingConfig struct {
 	d                    int
 }
 
+// ChecksumBits simply returns the number of checksum bits in the config.
+func (c EncodingConfig) ChecksumBits() int {
+	return c.CodeLength - c.StorageBits
+}
+
 // String returns the standard notation for a binary BCH code configuration of the EncodingConfig.
 func (c EncodingConfig) String() string {
 	return fmt.Sprintf("(%d, %d, %d) binary BCH code", c.CodeLength, c.StorageBits, c.d)
@@ -320,7 +325,7 @@ func genPoly(t, n, length int, field gField) (g [548576]int, k, d int, err error
 	var ii, jj, ll, kaux int
 	var aux, nocycles, root, noterms, redundancy int
 	var test bool
-	cycle, size, min, zeros := make([][]int, 1024), make([]int, 1024), make([]int, 1024), make([]int, 1024)
+	cycle, size, min, zeroes := make([][]int, 1024), make([]int, 1024), make([]int, 1024), make([]int, 1024)
 	for i := 0; i < 1024; i++ {
 		cycle[i] = make([]int, 21)
 	}
@@ -387,7 +392,7 @@ func genPoly(t, n, length int, field gField) (g [548576]int, k, d int, err error
 	kaux = 1
 	for ii = 0; ii < noterms; ii++ {
 		for jj = 0; jj < size[min[ii]]; jj++ {
-			zeros[kaux] = cycle[min[ii]][jj]
+			zeroes[kaux] = cycle[min[ii]][jj]
 			kaux++
 		}
 	}
@@ -401,20 +406,20 @@ func genPoly(t, n, length int, field gField) (g [548576]int, k, d int, err error
 	}
 
 	// Compute the generator polynomial
-	g[0] = field.alphaTo[zeros[1]]
-	g[1] = 1 // g(x) = (x + zeros[1]) initially
+	g[0] = field.alphaTo[zeroes[1]]
+	g[1] = 1 // g(x) = (x + zeroes[1]) initially
 	for ii = 2; ii <= redundancy; ii++ {
 		g[ii] = 1
 		for jj = ii - 1; jj > 0; jj-- {
 			if g[jj] != 0 {
-				g[jj] = g[jj - 1] ^ field.alphaTo[(field.indexOf[g[jj]] + zeros[ii]) % n]
+				g[jj] = g[jj - 1] ^ field.alphaTo[(field.indexOf[g[jj]] + zeroes[ii]) % n]
 			} else {
 				g[jj] = g[jj - 1]
 			}
 		}
-		g[0] = field.alphaTo[(field.indexOf[g[0]] + zeros[ii]) % n]
+		g[0] = field.alphaTo[(field.indexOf[g[0]] + zeroes[ii]) % n]
 	}
-	
+
 	return
 }
 
