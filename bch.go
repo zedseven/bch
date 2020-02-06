@@ -164,6 +164,10 @@ func Decode(config *EncodingConfig, buf *[]uint8) (recd []uint8, errors int, err
 
 // StorageBitsForConfig determines the number of bits able to be used for storage with a given configuration.
 func StorageBitsForConfig(codeLength, correctableErrors int) (int, error) {
+	if codeLength >= 1024 {
+		return 0, &UnachievableConfigError{}
+	}
+
 	m := int(math.Log2(float64(codeLength))) + 1
 
 	n, p, err := readP(m)
@@ -196,7 +200,9 @@ func TotalBitsForConfig(dataLength, correctableErrors int) (int, error) {
 	}
 	lastVal := -1
 	for i := dataLength + 1; true; i++ {
-		if testDataLength, _ := StorageBitsForConfig(i, correctableErrors); testDataLength == dataLength {
+		if testDataLength, err := StorageBitsForConfig(i, correctableErrors); err != nil {
+			return -1, err
+		} else if testDataLength == dataLength {
 			cachedTotalSizes[key] = i
 			return i, nil
 		} else if lastVal >= 0 && lastVal < dataLength && testDataLength >= dataLength {
