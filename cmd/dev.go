@@ -57,15 +57,19 @@ func main() {
 	}*/
 
 
-	data := []uint8{1, 1, 1, 0, 0, 1, 0, 0}
+	data := []uint8{0, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0}
 	fmt.Printf("Original data: %v\n", data)
-	code, config, err := bch.Encode(53, 8, &data)
+	config, err := bch.CreateConfig(265, 1)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	code, err := bch.Encode(config, &data)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 	fmt.Printf("This is a %v.\n", config)
 	fmt.Printf("Encoded data:   %v\n", code)
-	corruptData(&code, int(rand.Int63n(int64(12))))
+	//corruptData(&code, int(rand.Int63n(int64(12))))
 	fmt.Printf("Corrupted data: %v\n", code)
 	fmt.Println("Is data corrupt?", bch.IsDataCorrupted(config, code))
 	recv, errors, err := bch.Decode(config, &code)
@@ -79,7 +83,7 @@ func main() {
 
 	data = []uint8{0, 1, 0, 0, 1, 1, 0, 0}
 	fmt.Printf("Original data: %v\n", data)
-	code, err = bch.EncodeWithConfig(config, &data)
+	code, err = bch.Encode(config, &data)
 	if err != nil {
 		fmt.Println(err.Error())
 	}

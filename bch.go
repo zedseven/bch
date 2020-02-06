@@ -25,7 +25,7 @@ type EncodingConfig struct {
 	// The Galois field used in the encoding process.
 	field                gField
 	// The generator polynomial used in the encoding process.
-	generator            [548576]uint8
+	generator            [548576]int
 	n                    int
 	d                    int
 }
@@ -114,20 +114,7 @@ func CreateConfig(codeLength, correctableErrors int) (config *EncodingConfig, er
 // Encode encodes the first k bits of the data in buf based on how many parity bits are required to satisfy
 // the maximum correctable number of errors specified by correctableErrors. Note that the maximum correctable
 // errors does not scale linearly with the number of parity bits required for the task.
-func Encode(codeLength, correctableErrors int, buf *[]uint8) (recd []uint8, config *EncodingConfig, err error) {
-	config, err = CreateConfig(codeLength, correctableErrors)
-	if err != nil {
-		return
-	}
-
-	recd, err = EncodeWithConfig(config, buf)
-
-	return
-}
-
-// EncodeWithConfig does exactly the same thing as Encode, but takes an EncodingConfig as an argument. This should be
-// used if the same config would be used multiple times.
-func EncodeWithConfig(config *EncodingConfig, buf *[]uint8) (recd []uint8, err error) {
+func Encode(config *EncodingConfig, buf *[]uint8) (recd []uint8, err error) {
 	//return Encode(cnf.CodeLength, cnf.MaxCorrectableErrors, buf
 
 	data := make([]uint8, config.StorageBits)
@@ -146,7 +133,7 @@ func EncodeWithConfig(config *EncodingConfig, buf *[]uint8) (recd []uint8, err e
 	// Load the data into the code value (ecc bits followed by original data)
 	recd = make([]uint8, config.CodeLength)
 	for i := 0; i < config.CodeLength - config.StorageBits; i++ {
-		recd[i] = bb[i]
+		recd[i] = uint8(bb[i])
 	}
 	for i := 0; i < config.StorageBits; i++ {
 		recd[i + config.CodeLength - config.StorageBits] = data[i]
@@ -248,28 +235,44 @@ func readP(m int) (n int, p [21]uint8, err error) {
 	p[0], p[m] = 1, 1
 
 	switch m {
-	case 2, 3, 4, 6, 7, 15:
+	case 2:
 		p[1] = 1
-	case 5, 11:
+	case 3:
+		p[1] = 1
+	case 4:
+		p[1] = 1
+	case 5:
 		p[2] = 1
+	case 6:
+		p[1] = 1
+	case 7:
+		p[1] = 1
 	case 8:
 		p[4], p[5], p[6] = 1, 1, 1
 	case 9:
 		p[4] = 1
-	case 10, 17, 20:
+	case 10:
 		p[3] = 1
+	case 11:
+		p[2] = 1
 	case 12:
 		p[3], p[4], p[7] = 1, 1, 1
 	case 13:
 		p[1], p[3], p[4] = 1, 1, 1
 	case 14:
 		p[1], p[11], p[12] = 1, 1, 1
+	case 15:
+		p[1] = 1
 	case 16:
 		p[2], p[3], p[5] = 1, 1, 1
+	case 17:
+		p[3] = 1
 	case 18:
 		p[7] = 1
 	case 19:
 		p[1], p[5], p[6] = 1, 1, 1
+	case 20:
+		p[3] = 1
 	}
 	n = 1
 	for i := 0; i <= m; i++ {
@@ -313,7 +316,7 @@ func generateGF(m, n int, p [21]uint8) (field gField, err error) {
 	return
 }
 
-func genPoly(t, n, length int, field gField) (g [548576]uint8, k, d int, err error) {
+func genPoly(t, n, length int, field gField) (g [548576]int, k, d int, err error) {
 	var ii, jj, ll, kaux int
 	var aux, nocycles, root, noterms, redundancy int
 	var test bool
@@ -398,37 +401,37 @@ func genPoly(t, n, length int, field gField) (g [548576]uint8, k, d int, err err
 	}
 
 	// Compute the generator polynomial
-	g[0] = uint8(field.alphaTo[zeros[1]])
+	g[0] = field.alphaTo[zeros[1]]
 	g[1] = 1 // g(x) = (x + zeros[1]) initially
 	for ii = 2; ii <= redundancy; ii++ {
 		g[ii] = 1
 		for jj = ii - 1; jj > 0; jj-- {
 			if g[jj] != 0 {
-				g[jj] = g[jj - 1] ^ uint8(field.alphaTo[(field.indexOf[g[jj]] + zeros[ii]) % n])
+				g[jj] = g[jj - 1] ^ field.alphaTo[(field.indexOf[g[jj]] + zeros[ii]) % n]
 			} else {
 				g[jj] = g[jj - 1]
 			}
 		}
-		g[0] = uint8(field.alphaTo[(field.indexOf[g[0]] + zeros[ii]) % n])
+		g[0] = field.alphaTo[(field.indexOf[g[0]] + zeros[ii]) % n]
 	}
-
+	
 	return
 }
 
 // Compute redundancy bb[], the coefficients of b(x). The redundancy
 // polynomial b(x) is the remainder after dividing x^(length-k)*data(x)
 // by the generator polynomial g(x).
-func encodeBCH(length, k int, g [548576]uint8, data []uint8) (bb [548576]uint8, err error) {
+func encodeBCH(length, k int, g [548576]int, data []uint8) (bb [548576]int, err error) {
 	var i, j int
-	var feedback uint8
+	var feedback int
 
 	for i = 0; i < length - k; i++ {
 		bb[i] = 0
 	}
 	for i = k - 1; i >= 0; i-- {
-		feedback = data[i] ^ bb[length - k - 1]
+		feedback = int(data[i]) ^ bb[length - k - 1]
 		if feedback != 0 {
-			for j = length - k - 1; j >0; j-- {
+			for j = length - k - 1; j > 0; j-- {
 				if g[j] != 0 {
 					bb[j] = bb[j - 1] ^ feedback
 				} else {
