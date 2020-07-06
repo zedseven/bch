@@ -1,5 +1,5 @@
 # bch
-[![GoDoc](https://godoc.org/github.com/zedseven/bch?status.svg)](https://godoc.org/github.com/zedseven/bch)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![GoDoc](https://godoc.org/github.com/zedseven/bch?status.svg)](https://godoc.org/github.com/zedseven/bch)
 
 An implementation of binary Bose-Chaudhuri-Hocquenghem (BCH) codes and error-checking in Go.
 
